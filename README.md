@@ -1,6 +1,6 @@
 # 🐟 Fresh Fish Stall POS - High-Fidelity System
 
-![System Preview](./docs/preview.png)
+
 
 A professional, high-fidelity **Point of Sale (POS)** system designed specifically for fish stalls. This application provides a seamless, offline experience for managing sales, customers, and inventory with a premium user interface.
 
