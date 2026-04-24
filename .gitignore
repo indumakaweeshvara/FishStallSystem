@@ -1,0 +1,9 @@
+node_modules
+build
+dist
+.env
+electron/*.db
+electron/*.db-journal
+.DS_Store
+*.log
+.gemini
