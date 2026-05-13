@@ -4,6 +4,8 @@ dist
 .env
 electron/*.db
 electron/*.db-journal
+electron/*.db-shm
+electron/*.db-wal
 .DS_Store
 *.log
 .gemini

@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, User, Search, X, Trash2, ShoppingCart, Receipt, Fish } from 'lucide-react';
+import { 
+  Plus, 
+  User, 
+  Search, 
+  X, 
+  Trash2, 
+  ShoppingCart, 
+  Printer, 
+  Fish, 
+  ChevronRight, 
+  Package,
+  CreditCard,
+  History
+} from 'lucide-react';
 import { generateProfessionalInvoice } from '../utils/pdfGenerator';
 
 export default function Billing() {
@@ -7,22 +20,24 @@ export default function Billing() {
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState({});
   const [filteredCustomers, setFilteredCustomers] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [productSearch, setProductSearch] = useState('');
   
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState({ id: 0, name: 'Walk-in Customer' });
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [showCustDropdown, setShowCustDropdown] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
   
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
+  const [newProduct, setNewProduct] = useState({ name: '', default_rate: '' });
 
   const [cart, setCart] = useState([]);
-  const [itemEntry, setItemEntry] = useState({ description: '', rate: '', qty: '' });
+  const [itemEntry, setItemEntry] = useState({ description: '', symbol: '-', rate: '', qty: '', units: '' });
+  const [paidAmount, setPaidAmount] = useState('');
+  const [advanceAmount, setAdvanceAmount] = useState('');
   
-  const descriptionRef = useRef(null);
   const rateRef = useRef(null);
   const qtyRef = useRef(null);
+  const searchRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -44,43 +59,69 @@ export default function Billing() {
     }
   };
 
-  const handleCustomerSearch = (term) => {
-    setSearchTerm(term);
-    if (term.trim() === '') {
-      setFilteredCustomers([]);
-      setShowDropdown(false);
-    } else {
-      const filtered = customers.filter(c => 
-        c.name.toLowerCase().includes(term.toLowerCase()) || 
-        c.phone.includes(term)
-      );
-      setFilteredCustomers(filtered);
-      setShowDropdown(true);
-    }
-  };
-
-  const handleProductSearch = (term) => {
-    setItemEntry({ ...itemEntry, description: term });
-    if (term.trim() === '') {
-      setFilteredProducts(products); // Show all products when empty
-      setShowProductDropdown(true);
-    } else {
-      const filtered = products.filter(p => 
-        p.name.toLowerCase().includes(term.toLowerCase())
-      );
-      setFilteredProducts(filtered);
-      setShowProductDropdown(true);
-    }
-  };
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(productSearch.toLowerCase())
+  );
 
   const selectProduct = (prod) => {
     setItemEntry({
       ...itemEntry,
       description: prod.name,
-      rate: '' // Keep rate empty for manual entry
+      rate: prod.default_rate || ''
     });
-    setShowProductDropdown(false);
-    rateRef.current.focus(); // Focus rate field for manual entry
+    setTimeout(() => rateRef.current?.focus(), 100);
+  };
+
+  const addToCart = () => {
+    if (!itemEntry.description || !itemEntry.rate || !itemEntry.qty) return;
+    const newItem = {
+      id: Date.now(),
+      description: itemEntry.description,
+      symbol: itemEntry.symbol || '-',
+      rate: parseFloat(itemEntry.rate),
+      qty: parseFloat(itemEntry.qty),
+      units: itemEntry.units || '-',
+      amount: parseFloat(itemEntry.rate) * parseFloat(itemEntry.qty)
+    };
+    setCart([...cart, newItem]);
+    setItemEntry({ description: '', symbol: '-', rate: '', qty: '', units: '' });
+    setProductSearch('');
+    searchRef.current?.focus();
+  };
+
+  const removeFromCart = (id) => {
+    setCart(cart.filter(item => item.id !== id));
+  };
+
+  const grandTotal = cart.reduce((sum, item) => sum + item.amount, 0);
+
+  const handleGenerateBill = async () => {
+    if (cart.length === 0) return;
+    
+    let actualPaid = paidAmount === '' 
+      ? (selectedCustomer.id === 0 ? grandTotal : 0) 
+      : parseFloat(paidAmount);
+
+    if (window.require) {
+      const { ipcRenderer } = window.require('electron');
+      const transaction = {
+        customer_id: selectedCustomer.id || 0,
+        total_amount: grandTotal,
+        paid_amount: actualPaid,
+        items: cart
+      };
+      try {
+        const result = await ipcRenderer.invoke('save-transaction', transaction);
+        generateProfessionalInvoice(cart, grandTotal, selectedCustomer, result.id, settings, actualPaid, parseFloat(advanceAmount) || 0);
+        setCart([]);
+        setPaidAmount('');
+        setAdvanceAmount('');
+        setSelectedCustomer({ id: 0, name: 'Walk-in Customer' });
+        searchRef.current?.focus();
+      } catch (err) {
+        alert('Error saving transaction: ' + err.message);
+      }
+    }
   };
 
   const handleAddCustomer = async (e) => {
@@ -96,259 +137,304 @@ export default function Billing() {
     }
   };
 
-  const addToCart = () => {
-    if (!itemEntry.description || !itemEntry.rate || !itemEntry.qty) return;
-    const newItem = {
-      id: Date.now(),
-      description: itemEntry.description,
-      rate: parseFloat(itemEntry.rate),
-      qty: parseFloat(itemEntry.qty),
-      amount: parseFloat(itemEntry.rate) * parseFloat(itemEntry.qty)
-    };
-    setCart([...cart, newItem]);
-    setItemEntry({ description: '', rate: '', qty: '' });
-    descriptionRef.current.focus();
-  };
-
-  const removeFromCart = (id) => {
-    setCart(cart.filter(item => item.id !== id));
-  };
-
-  const grandTotal = cart.reduce((sum, item) => sum + item.amount, 0);
-
-  const handleGenerateBill = async () => {
-    if (cart.length === 0) return;
-    
+  const handleAddProduct = async (e) => {
+    e.preventDefault();
     if (window.require) {
       const { ipcRenderer } = window.require('electron');
-      const transaction = {
-        customer_id: selectedCustomer.id || 0,
-        total_amount: grandTotal,
-        items: cart
-      };
-      try {
-        const result = await ipcRenderer.invoke('save-transaction', transaction);
-        // Generate PDF Document with Real Transaction ID and Settings
-        generateProfessionalInvoice(cart, grandTotal, selectedCustomer, result.id, settings);
-        alert(`SUCCESS! Invoice #${result.id} generated.`);
-        setCart([]);
-        setSelectedCustomer({ id: 0, name: 'Walk-in Customer' });
-        if (descriptionRef.current) descriptionRef.current.focus();
-      } catch (err) {
-        alert('Error saving transaction: ' + err.message);
-      }
+      await ipcRenderer.invoke('add-product', {
+        name: newProduct.name,
+        default_rate: parseFloat(newProduct.default_rate) || 0
+      });
+      setShowProductModal(false);
+      setNewProduct({ name: '', default_rate: '' });
+      loadData();
     }
   };
 
-  const handleQtyKeyDown = (e) => {
-    if (e.key === 'Enter') addToCart();
-  };
-
-  useEffect(() => {
-    const handleGlobalKeys = (e) => {
-      if (e.key === 'F5') {
-        e.preventDefault();
-        handleGenerateBill();
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeys);
-    return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [cart, grandTotal, selectedCustomer]);
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="pos-layout fade-in">
       
-      {/* 1. TOP SECTION: Item Entry (Full Width) */}
-      <div className="card fade-in" style={{ display: 'grid', gridTemplateColumns: '4fr 2fr 2fr 140px', gap: '24px', alignItems: 'end', position: 'relative', zIndex: 100 }}>
-        <div style={{ position: 'relative' }}>
-          <label className="input-label">FISH DESCRIPTION (මාළු වර්ගය)</label>
+      {/* 1. LEFT PANEL: Product Picker (List Style) */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px', background: 'var(--surface)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <h3 style={{ fontSize: '18px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--primary)' }}>
+            <Package size={20} /> All Fish Types
+          </h3>
+          <button className="btn-ghost" style={{ padding: '6px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px' }} onClick={() => setShowProductModal(true)}>
+            <Plus size={18} color="#10b981" />
+          </button>
+        </div>
+        
+        <div style={{ position: 'relative', marginBottom: '10px' }}>
           <input 
-            ref={descriptionRef}
+            ref={searchRef}
             type="text" 
-            placeholder="e.g. Thalapath" 
+            placeholder="Quick search fish..." 
             className="input-field" 
-            value={itemEntry.description}
-            onChange={e => handleProductSearch(e.target.value)}
-            onFocus={() => handleProductSearch(itemEntry.description)}
+            style={{ padding: '12px 15px 12px 40px', fontSize: '14px', borderRadius: '12px' }}
+            value={productSearch}
+            onChange={e => setProductSearch(e.target.value)}
           />
-          {showProductDropdown && filteredProducts.length > 0 && (
-            <div className="card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, marginTop: '8px', padding: '8px', maxHeight: '300px', overflowY: 'auto', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', border: '1px solid var(--primary)' }}>
-              {filteredProducts.map(p => (
-                <div key={p.id} style={{ padding: '12px 16px', cursor: 'pointer', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9' }} onClick={() => selectProduct(p)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Fish size={16} color="var(--primary)" />
-                    <span style={{ fontWeight: '600' }}>{p.name}</span>
-                  </div>
-                </div>
-              ))}
+          <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} />
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', alignContent: 'start', paddingRight: '4px' }}>
+          {filteredProducts.map(p => (
+            <div 
+              key={p.id} 
+              style={{ 
+                padding: '6px 10px', 
+                background: itemEntry.description === p.name ? 'var(--primary)' : 'var(--background)', 
+                color: itemEntry.description === p.name ? 'white' : 'var(--text-main)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                transition: 'all 0.1s ease',
+                border: itemEntry.description === p.name ? 'none' : '1px solid var(--border)',
+                height: 'fit-content'
+              }}
+              className="product-list-item"
+              onClick={() => selectProduct(p)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                < Fish size={14} color={itemEntry.description === p.name ? 'white' : '#10b981'} />
+                <span style={{ fontWeight: '600', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>{p.name}</span>
+              </div>
+            </div>
+          ))}
+          {filteredProducts.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px 0', opacity: 0.5 }}>
+              <Search size={32} style={{ marginBottom: '10px' }} />
+              <p>No fish found</p>
             </div>
           )}
         </div>
-        <div>
-          <label className="input-label">RATE Rs. (මිල)</label>
-          <input 
-            ref={rateRef}
-            type="number" 
-            placeholder="0.00" 
-            className="input-field" 
-            value={itemEntry.rate}
-            onChange={e => setItemEntry({...itemEntry, rate: e.target.value})}
-          />
-        </div>
-        <div>
-          <label className="input-label">QTY Kg (ප්‍රමාණය)</label>
-          <input 
-            ref={qtyRef}
-            type="number" 
-            placeholder="0.000" 
-            className="input-field" 
-            value={itemEntry.qty}
-            onChange={e => setItemEntry({...itemEntry, qty: e.target.value})}
-            onKeyDown={handleQtyKeyDown}
-          />
-        </div>
-        <button className="btn btn-primary" style={{ height: '54px', width: '100%' }} onClick={addToCart}>ADD TO CART</button>
       </div>
 
-      {/* 2. BOTTOM SECTION: Cart and Checkout (Split Layout) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', flex: 1 }}>
+      {/* 2. CENTER PANEL: Cart & Entry */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         
-        {/* Cart Card */}
-        <div className="card fade-in" style={{ padding: 0, display: 'flex', flexDirection: 'column', minHeight: '400px' }}>
-          <div style={{ padding: '20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShoppingCart size={20} color="var(--primary)" /> Shopping Cart
-            </h3>
-            <span style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '700' }}>
-              {cart.length} Items
-            </span>
+        {/* Quick Entry Bar */}
+        <div className="card glass-card" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.6fr 1fr 1fr 0.8fr 90px', gap: '8px', padding: '16px', alignItems: 'end' }}>
+          <div>
+            <label className="input-label" style={{ fontSize: '11px' }}>Description</label>
+            <input type="text" className="input-field" style={{ fontSize: '14px', padding: '10px' }} value={itemEntry.description} readOnly placeholder="Select Fish..." />
           </div>
-          
+          <div>
+            <label className="input-label" style={{ fontSize: '11px' }}>Symbol</label>
+            <select className="input-field" style={{ fontSize: '14px', padding: '10px' }} value={itemEntry.symbol} onChange={e => setItemEntry({...itemEntry, symbol: e.target.value})}>
+              {['-', 'P', 'L', 'X', 'XX', '.', 'B', 'O', 'පටි', 'A', 'B+', 'A+', 'රිටන්', 'M', 'K', 'මුර'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="input-label" style={{ fontSize: '11px' }}>Rate</label>
+            <input ref={rateRef} type="number" className="input-field" style={{ fontSize: '14px', padding: '10px' }} value={itemEntry.rate} onChange={e => setItemEntry({...itemEntry, rate: e.target.value})} placeholder="0.00" />
+          </div>
+          <div>
+            <label className="input-label" style={{ fontSize: '11px' }}>Qty</label>
+            <input ref={qtyRef} type="number" className="input-field" style={{ fontSize: '14px', padding: '10px' }} value={itemEntry.qty} onChange={e => setItemEntry({...itemEntry, qty: e.target.value})} onKeyDown={e => e.key === 'Enter' && addToCart()} placeholder="0.000" />
+          </div>
+          <div>
+            <label className="input-label" style={{ fontSize: '11px' }}>Unit</label>
+            <input 
+              type="text" 
+              className="input-field" 
+              style={{ fontSize: '14px', padding: '10px' }} 
+              value={itemEntry.units} 
+              onChange={e => setItemEntry({...itemEntry, units: e.target.value})} 
+              placeholder=""
+            />
+          </div>
+          <button className="btn btn-primary" style={{ height: '42px', borderRadius: '10px', background: '#10b981', minWidth: '90px' }} onClick={addToCart}>
+            <span style={{ fontWeight: '800', fontSize: '13px', letterSpacing: '0.5px' }}>ADD</span>
+          </button>
+        </div>
+
+        {/* Cart Table */}
+        <div className="cart-table-container" style={{ flex: 1 }}>
+          <div className="cart-table-header">
+            <h3 style={{ fontSize: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShoppingCart size={18} color="var(--primary)" /> Cart Items
+              <span className="badge badge-primary">{cart.length}</span>
+            </h3>
+            {cart.length > 0 && <button className="btn-ghost" style={{ fontSize: '12px', color: 'var(--danger)' }} onClick={() => setCart([])}>Clear All</button>}
+          </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            <table>
-              <thead>
+            <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface)' }}>
                 <tr>
-                  <th>DESCRIPTION</th>
-                  <th style={{ textAlign: 'right' }}>RATE</th>
-                  <th style={{ textAlign: 'right' }}>QTY</th>
-                  <th style={{ textAlign: 'right' }}>AMOUNT</th>
-                  <th style={{ width: '60px' }}></th>
+                  <th style={{ paddingLeft: '24px' }}>Item</th>
+                  <th>Symbol</th>
+                  <th style={{ textAlign: 'right' }}>Rate</th>
+                  <th style={{ textAlign: 'right' }}>Qty</th>
+                  <th style={{ textAlign: 'right', paddingRight: '24px' }}>Total</th>
+                  <th style={{ width: '50px' }}></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody style={{ padding: '0 12px' }}>
                 {cart.map(item => (
-                  <tr key={item.id}>
-                    <td style={{ fontWeight: '600' }}>{item.description}</td>
-                    <td style={{ textAlign: 'right' }}>Rs. {item.rate.toFixed(2)}</td>
-                    <td style={{ textAlign: 'right' }}>{item.qty.toFixed(3)} Kg</td>
-                    <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--primary)' }}>Rs. {item.amount.toFixed(2)}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button className="btn-ghost" style={{ padding: '8px', border: 'none', borderRadius: '8px' }} onClick={() => removeFromCart(item.id)}>
-                        <Trash2 size={18} color="var(--danger)" />
-                      </button>
+                  <tr key={item.id} className="bill-item-row" style={{ background: 'var(--background)' }}>
+                    <td style={{ paddingLeft: '24px', borderRadius: '12px 0 0 12px', fontWeight: '600' }}>{item.description}</td>
+                    <td><span className="badge badge-primary">{item.symbol}</span></td>
+                    <td style={{ textAlign: 'right' }}>{item.rate.toFixed(2)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: '700' }}>{item.qty.toFixed(3)}</td>
+                    <td style={{ textAlign: 'right', paddingRight: '24px', fontWeight: '800', color: 'var(--primary)' }}>{item.amount.toFixed(2)}</td>
+                    <td style={{ borderRadius: '0 12px 12px 0' }}>
+                      <button className="btn-ghost" onClick={() => removeFromCart(item.id)}><Trash2 size={16} color="var(--danger)" /></button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {cart.length === 0 && (
-              <div style={{ padding: '80px 0', textAlign: 'center' }}>
-                <ShoppingCart size={48} color="#e2e8f0" style={{ marginBottom: '16px' }} />
-                <p style={{ color: 'var(--text-muted)' }}>No items in cart.</p>
+              <div style={{ padding: '60px 0', textAlign: 'center', opacity: 0.3 }}>
+                <Package size={48} style={{ marginBottom: '12px' }} />
+                <p>Cart is empty</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. RIGHT PANEL: Checkout */}
+      <div className="checkout-section fade-in">
+        <div style={{ marginBottom: '10px' }}>
+          <label className="input-label">Customer</label>
+          <div style={{ position: 'relative' }}>
+            <div 
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--primary-light)', borderRadius: '12px', border: '1.5px solid var(--primary)', cursor: 'pointer' }}
+              onClick={() => setShowCustDropdown(!showCustDropdown)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <User size={18} color="var(--primary)" />
+                <span style={{ fontWeight: '700', color: 'var(--primary)' }}>{selectedCustomer.name}</span>
+              </div>
+              <Plus size={18} color="var(--primary)" onClick={(e) => { e.stopPropagation(); setShowModal(true); }} />
+            </div>
+
+            {showCustDropdown && (
+              <div className="card shadow-lg" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '8px', padding: '8px', maxHeight: '250px', overflowY: 'auto' }}>
+                <div 
+                  className="nav-item" 
+                  style={{ cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                  onClick={() => { setSelectedCustomer({ id: 0, name: 'Walk-in Customer' }); setShowCustDropdown(false); }}
+                >
+                  Walk-in Customer
+                </div>
+                {customers.map(c => (
+                  <div 
+                    key={c.id} 
+                    className="nav-item" 
+                    style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+                    onClick={() => { setSelectedCustomer(c); setShowCustDropdown(false); }}
+                  >
+                    <span>{c.name}</span>
+                    <span style={{ fontSize: '11px', opacity: 0.5 }}>{c.phone}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Sidebar: Customer & Checkout */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* Customer Card */}
-          <div className="card fade-in">
-            <label className="input-label">Customer Details</label>
-            <div style={{ position: 'relative', marginBottom: '16px' }}>
+        <div className={`total-display ${grandTotal > 0 ? 'pulse-total' : ''}`} style={{ padding: '20px', borderRadius: '16px' }}>
+          <div style={{ opacity: 0.8, fontSize: '11px', fontWeight: '700', letterSpacing: '1px', marginBottom: '2px' }}>GRAND TOTAL</div>
+          <div style={{ fontSize: '32px', fontWeight: '800', fontFamily: 'Outfit' }}>
+            <span style={{ fontSize: '16px', marginRight: '4px' }}>Rs.</span>
+            {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+            <div style={{ background: 'var(--background)', padding: '12px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <label className="input-label" style={{ fontSize: '10px', marginBottom: '4px' }}>Advance Amount (Rs.)</label>
               <input 
-                type="text" 
-                placeholder="Search..." 
+                type="number" 
                 className="input-field" 
-                style={{ paddingLeft: '40px', fontSize: '14px' }}
-                value={searchTerm} 
-                onChange={(e) => handleCustomerSearch(e.target.value)} 
-                onFocus={() => searchTerm && setShowDropdown(true)}
+                style={{ padding: '4px', fontSize: '18px', fontWeight: '800', textAlign: 'right', border: 'none', background: 'transparent' }}
+                placeholder="0.00"
+                value={advanceAmount}
+                onChange={e => setAdvanceAmount(e.target.value)}
               />
-              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-              
-              {showDropdown && (
-                <div className="card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, marginTop: '8px', padding: '8px', maxHeight: '200px', overflowY: 'auto' }}>
-                  <div style={{ padding: '10px 12px', cursor: 'pointer', borderRadius: '8px', fontWeight: '600', color: 'var(--primary)' }} onClick={() => { setSelectedCustomer({ id: 0, name: 'Walk-in Customer' }); setShowDropdown(false); setSearchTerm(''); }}>
-                    Walk-in Customer
-                  </div>
-                  {filteredCustomers.map(c => (
-                    <div key={c.id} style={{ padding: '10px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }} onClick={() => { setSelectedCustomer(c); setShowDropdown(false); setSearchTerm(''); }}>
-                      <span style={{ fontWeight: '600' }}>{c.name}</span>
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{c.phone}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--primary-light)', borderRadius: '10px', border: '1px solid #dbeafe' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <User size={16} color="var(--primary)" />
-                <span style={{ fontWeight: '700', color: '#1e40af', fontSize: '14px' }}>{selectedCustomer.name}</span>
-              </div>
-              <button className="btn-ghost" style={{ padding: '4px', height: 'auto' }} onClick={() => setShowModal(true)}>
-                <Plus size={18} color="var(--primary)" />
-              </button>
             </div>
           </div>
 
-          {/* Total & Checkout Card */}
-          <div className="card fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: 'var(--primary)', color: 'white', border: 'none' }}>
-            <div>
-              <h3 style={{ fontSize: '14px', opacity: 0.8, fontWeight: '500', marginBottom: '8px' }}>GRAND TOTAL</h3>
-              <div style={{ fontSize: '36px', fontWeight: '800', fontFamily: 'Outfit' }}>
-                <span style={{ fontSize: '18px', fontWeight: '600', marginRight: '4px' }}>Rs.</span>
-                {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </div>
-            </div>
+          <div style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(37, 99, 235, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', opacity: 0.7, fontWeight: '600' }}>Balance to Pay</span>
+            <span style={{ fontWeight: '900', color: 'var(--primary)', fontSize: '22px' }}>
+              Rs. {(grandTotal - (parseFloat(advanceAmount) || 0)).toFixed(2)}
+            </span>
+          </div>
+
+            <button 
+              className="btn btn-primary btn-checkout" 
+              style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)', color: 'white', border: 'none', boxShadow: '0 4px 15px rgba(37, 99, 235, 0.3)', height: '50px' }}
+              disabled={cart.length === 0}
+              onClick={handleGenerateBill}
+            >
+              <Printer size={20} /> PRINT INVOICE
+            </button>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ padding: '12px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: '12px', textAlign: 'center' }}>
-                Press **F5** for Quick Billing
+            {settings.stall_logo && (
+              <div style={{ textAlign: 'center', marginTop: '15px' }}>
+                <img 
+                  src={settings.stall_logo} 
+                  alt="Stall Logo" 
+                  style={{ width: '180px', height: 'auto', borderRadius: '15px', opacity: 1, filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))' }} 
+                />
               </div>
-              <button 
-                className="btn" 
-                style={{ width: '100%', height: '56px', background: 'white', color: 'var(--primary)', fontSize: '16px', fontWeight: '800' }}
-                disabled={cart.length === 0}
-                onClick={handleGenerateBill}
-              >
-                <Receipt size={20} /> GENERATE BILL
-              </button>
-            </div>
+            )}
+          
+          <div style={{ textAlign: 'center', fontSize: '11px', opacity: 0.5 }}>
+            <History size={12} style={{ marginRight: '4px' }} />
+            Press <strong>F5</strong> for instant billing
           </div>
         </div>
       </div>
 
-      {/* Add Customer Modal */}
+      {/* MODALS */}
       {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
-          <div className="card fade-in" style={{ width: '360px', padding: '32px' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card fade-in" style={{ width: '380px', padding: '32px', borderRadius: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center' }}>
               <h2 style={{ margin: 0, fontSize: '20px' }}>New Customer</h2>
               <button className="btn-ghost" onClick={() => setShowModal(false)}><X size={20} /></button>
             </div>
-            <form onSubmit={handleAddCustomer} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleAddCustomer} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="input-group" style={{ marginBottom: 0 }}>
-                <label className="input-label">Customer Name</label>
-                <input type="text" className="input-field" style={{ fontSize: '14px' }} required value={newCustomer.name} onChange={e => setNewCustomer({...newCustomer, name: e.target.value})} />
+                <label className="input-label">Full Name</label>
+                <input type="text" className="input-field" required value={newCustomer.name} onChange={e => setNewCustomer({...newCustomer, name: e.target.value})} />
               </div>
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label className="input-label">Phone Number</label>
-                <input type="text" className="input-field" style={{ fontSize: '14px' }} required value={newCustomer.phone} onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})} />
+                <input type="text" className="input-field" required value={newCustomer.phone} onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})} />
               </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>Create & Select</button>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', height: '50px' }}>Save Customer</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showProductModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card fade-in" style={{ width: '380px', padding: '32px', borderRadius: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '20px' }}>New Fish Type</h2>
+              <button className="btn-ghost" onClick={() => setShowProductModal(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleAddProduct} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label">Fish Name (English/Sinhala)</label>
+                <input type="text" className="input-field" required placeholder="e.g. බලයා - Balaya" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label">Default Rate (Optional)</label>
+                <input type="number" className="input-field" value={newProduct.default_rate} onChange={e => setNewProduct({...newProduct, default_rate: e.target.value})} />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', height: '50px' }}>Add to System</button>
             </form>
           </div>
         </div>

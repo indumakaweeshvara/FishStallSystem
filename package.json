@@ -2,17 +2,20 @@
   "name": "fishproject",
   "version": "0.1.0",
   "private": true,
+  "description": "Fish Stall POS System",
+  "author": "Thinaya Sea Food Supplier",
   "main": "electron/main.js",
   "homepage": "./",
   "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "html2pdf.js": "^0.14.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.364.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3",
-    "react-scripts": "5.0.1",
-    "sqlite3": "^5.1.7"
+    "react-scripts": "5.0.1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -24,7 +27,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "cross-env GENERATE_SOURCEMAP=false react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "electron:start": "electron .",
@@ -42,5 +45,23 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "build": {
+    "extends": null,
+    "appId": "com.fishproject.app",
+    "productName": "FishProject",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asar": false,
+    "win": {
+      "target": "nsis"
+    }
   }
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
 const db = require('./database');
 const isDev = !app.isPackaged;
@@ -13,6 +13,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
+      webviewTag: true,
     },
   });
 
@@ -21,6 +22,28 @@ function createWindow() {
     : `file://${path.join(__dirname, '../build/index.html')}`;
 
   win.loadURL(startUrl);
+
+  // Allow all permissions for webview (needed for WhatsApp attachments)
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(true);
+  });
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    return true;
+  });
+
+  // Specifically allow permissions for the WhatsApp partition
+  const whatsappSession = session.fromPartition('persist:whatsapp');
+  whatsappSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(true);
+  });
+  whatsappSession.setPermissionCheckHandler((webContents, permission) => {
+    return true;
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    return { action: 'allow' };
+  });
 
   // --- IPC HANDLERS ---
 
@@ -39,6 +62,36 @@ function createWindow() {
       return await db.query("SELECT * FROM products ORDER BY name ASC");
     } catch (err) {
       return [];
+    }
+  });
+
+  ipcMain.handle('add-product', async (event, product) => {
+    console.log(">>> ADD PRODUCT CALLED:", product.name);
+    try {
+      return await db.run("INSERT INTO products (name, default_rate) VALUES (?, ?)", [product.name, product.default_rate || 0]);
+    } catch (err) {
+      console.error("ADD PRODUCT ERROR:", err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('update-product', async (event, product) => {
+    console.log(">>> UPDATE PRODUCT CALLED:", product.id, product.name);
+    try {
+      return await db.run("UPDATE products SET name = ?, default_rate = ? WHERE id = ?", [product.name, product.default_rate || 0, product.id]);
+    } catch (err) {
+      console.error("UPDATE PRODUCT ERROR:", err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('delete-product', async (event, id) => {
+    console.log(">>> DELETE PRODUCT CALLED ID:", id);
+    try {
+      return await db.run("DELETE FROM products WHERE id = ?", [id]);
+    } catch (err) {
+      console.error("DELETE PRODUCT ERROR:", err);
+      throw err;
     }
   });
 
@@ -109,7 +162,7 @@ function createWindow() {
   ipcMain.handle('add-customer', async (event, customer) => {
     console.log(">>> ADD CUSTOMER CALLED:", customer.name);
     try {
-      return await db.run("INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)", [customer.name, customer.phone, customer.email, customer.address]);
+      return await db.run("INSERT INTO customers (name, phone, email, address, created_at) VALUES (?, ?, ?, ?, ?)", [customer.name, customer.phone, customer.email || '', customer.address || '', new Date().toISOString()]);
     } catch (err) {
       console.error("ADD CUSTOMER ERROR:", err);
       throw err;
@@ -127,17 +180,71 @@ function createWindow() {
   });
 
   ipcMain.handle('save-transaction', async (event, txn) => {
-    console.log(">>> SAVE TRANSACTION CALLED. TOTAL:", txn.total_amount);
+    console.log(">>> SAVE TRANSACTION CALLED. TOTAL:", txn.total_amount, "PAID:", txn.paid_amount);
     try {
+      const paidAmount = txn.paid_amount || 0;
       const result = await db.run(
-        "INSERT INTO transactions (customer_id, date, total_amount, items_json) VALUES (?, ?, ?, ?)",
-        [txn.customer_id, new Date().toISOString(), txn.total_amount, JSON.stringify(txn.items)]
+        "INSERT INTO transactions (customer_id, date, total_amount, paid_amount, items_json) VALUES (?, ?, ?, ?, ?)",
+        [txn.customer_id, new Date().toISOString(), txn.total_amount, paidAmount, JSON.stringify(txn.items)]
       );
+      
+      // Update customer balance if it's a registered customer
+      if (txn.customer_id) {
+        const creditAmount = txn.total_amount - paidAmount;
+        if (creditAmount > 0 || creditAmount < 0) { // Can be negative if they overpaid
+          await db.run("UPDATE customers SET balance = balance + ? WHERE id = ?", [creditAmount, txn.customer_id]);
+        }
+      }
+      
       console.log(">>> TRANSACTION SAVED SUCCESS, ID:", result.id);
       return result;
     } catch (err) {
       console.error(">>> SAVE TRANSACTION FAILED:", err);
       throw err;
+    }
+  });
+
+  ipcMain.handle('add-payment', async (event, payment) => {
+    console.log(">>> ADD PAYMENT CALLED. CUST:", payment.customer_id, "AMOUNT:", payment.amount);
+    try {
+      const result = await db.run(
+        "INSERT INTO payments (customer_id, amount, date) VALUES (?, ?, ?)",
+        [payment.customer_id, payment.amount, new Date().toISOString()]
+      );
+      // Reduce customer balance
+      await db.run("UPDATE customers SET balance = balance - ? WHERE id = ?", [payment.amount, payment.customer_id]);
+      return result;
+    } catch (err) {
+      console.error(">>> ADD PAYMENT FAILED:", err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('get-payments', async (event, customer_id) => {
+    try {
+      return await db.query("SELECT * FROM payments WHERE customer_id = ? ORDER BY id DESC", [customer_id]);
+    } catch (err) {
+      return [];
+    }
+  });
+
+  ipcMain.handle('get-sales-report', async () => {
+    try {
+      const rows = await db.query(`
+        SELECT 
+          date(date) as sale_date, 
+          SUM(total_amount) as daily_total,
+          SUM(paid_amount) as daily_paid,
+          SUM(total_amount - paid_amount) as daily_credit
+        FROM transactions 
+        GROUP BY date(date) 
+        ORDER BY date(date) DESC 
+        LIMIT 30
+      `);
+      return rows;
+    } catch (err) {
+      console.error(">>> GET SALES REPORT FAILED:", err);
+      return [];
     }
   });
 

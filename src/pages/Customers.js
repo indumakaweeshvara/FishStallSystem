@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Search, Phone, Mail, Edit, Trash2 } from 'lucide-react';
+import { Users, UserPlus, Search, Phone, Mail, Edit, Trash2, X, DollarSign, CreditCard } from 'lucide-react';
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
 
   useEffect(() => {
@@ -40,10 +43,25 @@ export default function Customers() {
     }
   };
 
+  const handlePayment = async (e) => {
+    e.preventDefault();
+    if (window.require && selectedCustomer && paymentAmount) {
+      const { ipcRenderer } = window.require('electron');
+      await ipcRenderer.invoke('add-payment', { 
+        customer_id: selectedCustomer.id, 
+        amount: parseFloat(paymentAmount) 
+      });
+      setShowPaymentModal(false);
+      setPaymentAmount('');
+      loadCustomers();
+    }
+  };
+
   const filteredCustomers = customers.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.phone.includes(searchTerm)
   );
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -73,16 +91,7 @@ export default function Customers() {
           <h2 style={{ fontSize: '32px', margin: '8px 0', color: 'var(--primary)' }}>{customers.length}</h2>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Registered in database</p>
         </div>
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p className="input-label">Active This Month</p>
-          <h2 style={{ fontSize: '32px', margin: '8px 0', color: 'var(--success)' }}>{Math.ceil(customers.length * 0.7)}</h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Returning customers</p>
-        </div>
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p className="input-label">New Customers</p>
-          <h2 style={{ fontSize: '32px', margin: '8px 0', color: 'var(--warning)' }}>+5</h2>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Added this week</p>
-        </div>
+
       </div>
 
       {/* Customer Table */}
@@ -163,6 +172,49 @@ export default function Customers() {
               <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
                 <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Customer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedCustomer && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
+          <div className="card fade-in" style={{ width: '400px', padding: '32px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={20} color="var(--primary)" /> 
+                Add Payment
+              </h2>
+              <button className="btn-ghost" onClick={() => setShowPaymentModal(false)}><X size={20} /></button>
+            </div>
+            
+            <div style={{ background: 'var(--bg-body)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+              <p style={{ margin: '0 0 5px 0', fontSize: '13px', color: 'var(--text-muted)' }}>Customer</p>
+              <h3 style={{ margin: 0, fontSize: '16px' }}>{selectedCustomer.name}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Current Balance:</span>
+                <span style={{ fontWeight: 'bold', color: 'var(--danger)' }}>Rs. {(selectedCustomer.balance || 0).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handlePayment} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="input-group">
+                <label className="input-label">Payment Amount (Rs.)</label>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  className="input-field" 
+                  required 
+                  value={paymentAmount} 
+                  onChange={e => setPaymentAmount(e.target.value)} 
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+                <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowPaymentModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1, background: 'var(--success)' }}>Confirm Payment</button>
               </div>
             </form>
           </div>

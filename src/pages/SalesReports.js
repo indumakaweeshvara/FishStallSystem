@@ -5,9 +5,13 @@ export default function SalesReports() {
   const [transactions, setTransactions] = useState([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
 
+  const [dailySales, setDailySales] = useState([]);
+
   useEffect(() => {
     if (window.require) {
       const { ipcRenderer } = window.require('electron');
+      
+      // Load recent transactions
       ipcRenderer.invoke('get-transactions')
         .then(data => {
           setTransactions(data);
@@ -15,6 +19,11 @@ export default function SalesReports() {
           setTotalRevenue(revenue);
         })
         .catch(err => console.error("Error loading transactions:", err));
+        
+      // Load daily sales report
+      ipcRenderer.invoke('get-sales-report')
+        .then(data => setDailySales(data))
+        .catch(err => console.error("Error loading daily sales:", err));
     }
   }, []);
 
@@ -28,84 +37,132 @@ export default function SalesReports() {
       <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#111827', marginBottom: '32px' }}>Sales Reports</h1>
 
       {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginBottom: '32px' }}>
-        <div className="panel" style={{ padding: '32px', display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <div style={{ backgroundColor: '#eff6ff', padding: '20px', borderRadius: '16px', color: '#2563eb' }}>
-            <DollarSign size={40} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ backgroundColor: 'var(--primary-light)', padding: '16px', borderRadius: '12px', color: 'var(--primary)' }}>
+            <DollarSign size={32} />
           </div>
           <div>
-            <p style={{ color: '#6b7280', fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Total Revenue</p>
-            <h2 style={{ fontSize: '36px', fontWeight: 'bold', color: '#111827' }}>${totalRevenue.toFixed(2)}</h2>
+            <p className="input-label">Total Revenue</p>
+            <h2 style={{ fontSize: '28px', fontWeight: '800', margin: 0 }}>Rs. {totalRevenue.toFixed(2)}</h2>
           </div>
         </div>
 
-        <div className="panel" style={{ padding: '32px', display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <div style={{ backgroundColor: '#faf5ff', padding: '20px', borderRadius: '16px', color: '#a855f7' }}>
-            <ReceiptText size={40} />
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '12px', color: '#16a34a' }}>
+            <ReceiptText size={32} />
           </div>
           <div>
-            <p style={{ color: '#6b7280', fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Total Transactions</p>
-            <h2 style={{ fontSize: '36px', fontWeight: 'bold', color: '#111827' }}>{transactions.length}</h2>
-          </div>
-        </div>
-
-        <div className="panel" style={{ padding: '32px', display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <div style={{ backgroundColor: '#f0fdf4', padding: '20px', borderRadius: '16px', color: '#22c55e' }}>
-            <Package size={40} />
-          </div>
-          <div>
-            <p style={{ color: '#6b7280', fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Total Items Sold</p>
-            <h2 style={{ fontSize: '36px', fontWeight: 'bold', color: '#111827' }}>
-              {transactions.reduce((sum, txn) => sum + txn.items_json.length, 0)}
+            <p className="input-label">Total Cash Collected</p>
+            <h2 style={{ fontSize: '28px', fontWeight: '800', margin: 0, color: '#16a34a' }}>
+              Rs. {transactions.reduce((sum, txn) => sum + (txn.paid_amount || 0), 0).toFixed(2)}
             </h2>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ backgroundColor: '#fef2f2', padding: '16px', borderRadius: '12px', color: '#dc2626' }}>
+            <Calendar size={32} />
+          </div>
+          <div>
+            <p className="input-label">Total Credit Given</p>
+            <h2 style={{ fontSize: '28px', fontWeight: '800', margin: 0, color: '#dc2626' }}>
+              Rs. {transactions.reduce((sum, txn) => sum + (txn.total_amount - (txn.paid_amount || 0)), 0).toFixed(2)}
+            </h2>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ backgroundColor: '#faf5ff', padding: '16px', borderRadius: '12px', color: '#a855f7' }}>
+            <Package size={32} />
+          </div>
+          <div>
+            <p className="input-label">Total Transactions</p>
+            <h2 style={{ fontSize: '28px', fontWeight: '800', margin: 0 }}>{transactions.length}</h2>
           </div>
         </div>
       </div>
 
-      {/* Sales List Panel */}
-      <div className="panel" style={{ flex: 1, overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '24px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827', margin: 0 }}>Recent Transactions</h2>
+      {/* Two Column Layout for Reports */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1, overflow: 'hidden' }}>
+        
+        {/* Daily Sales Report */}
+        <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Daily Sales Report</h2>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <table>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-body)' }}>
+                <tr>
+                  <th>DATE</th>
+                  <th style={{ textAlign: 'right' }}>CASH (Rs.)</th>
+                  <th style={{ textAlign: 'right' }}>CREDIT (Rs.)</th>
+                  <th style={{ textAlign: 'right' }}>TOTAL SALES (Rs.)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailySales.map((day, idx) => (
+                  <tr key={idx}>
+                    <td style={{ fontWeight: '600' }}>{day.sale_date}</td>
+                    <td style={{ textAlign: 'right', color: '#16a34a', fontWeight: '600' }}>{day.daily_paid.toFixed(2)}</td>
+                    <td style={{ textAlign: 'right', color: '#dc2626', fontWeight: '600' }}>{day.daily_credit.toFixed(2)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--primary)' }}>{day.daily_total.toFixed(2)}</td>
+                  </tr>
+                ))}
+                {dailySales.length === 0 && (
+                  <tr>
+                    <td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>No daily sales recorded yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <table>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-              <tr>
-                <th>Transaction ID</th>
-                <th>Date & Time</th>
-                <th>Items (Weight)</th>
-                <th style={{ textAlign: 'right' }}>Total Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map(txn => (
-                <tr key={txn.id}>
-                  <td style={{ fontWeight: '500', color: '#4b5563' }}>#{txn.id.toString().padStart(4, '0')}</td>
-                  <td style={{ color: '#6b7280' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Calendar size={18} />
-                      {formatDate(txn.date)}
-                    </div>
-                  </td>
-                  <td style={{ color: '#4b5563' }}>
-                    {txn.items_json.map(item => `${item.name} (${item.qty}kg)`).join(', ')}
-                  </td>
-                  <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#2563eb', fontSize: '18px' }}>
-                    ${txn.total_amount.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-              {transactions.length === 0 && (
+        {/* Recent Transactions List */}
+        <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Recent Invoices</h2>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <table>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-body)' }}>
                 <tr>
-                  <td colSpan="4" style={{ padding: '60px', textAlign: 'center', color: '#9ca3af', fontSize: '18px' }}>
-                    No sales yet. Generate a bill to see it here!
-                  </td>
+                  <th>INV #</th>
+                  <th>CUSTOMER</th>
+                  <th style={{ textAlign: 'right' }}>PAID (Rs.)</th>
+                  <th style={{ textAlign: 'right' }}>TOTAL (Rs.)</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {transactions.map(txn => {
+                  return (
+                    <tr key={txn.id}>
+                      <td style={{ fontWeight: '600', color: 'var(--text-muted)' }}>#{txn.id.toString().padStart(4, '0')}</td>
+                      <td>
+                        <div style={{ fontWeight: '600' }}>{txn.customer_name}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{formatDate(txn.date)}</div>
+                      </td>
+                      <td style={{ textAlign: 'right', color: '#16a34a', fontWeight: '600' }}>
+                        {(txn.paid_amount || 0).toFixed(2)}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--primary)' }}>
+                        {txn.total_amount.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {transactions.length === 0 && (
+                  <tr>
+                    <td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>No invoices yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+
       </div>
     </div>
   );

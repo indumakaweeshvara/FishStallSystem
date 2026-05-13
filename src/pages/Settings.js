@@ -39,6 +39,7 @@ export default function Settings() {
         await ipcRenderer.invoke('update-setting', { key: 'stall_phone', value: settings.stall_phone });
         await ipcRenderer.invoke('update-setting', { key: 'stall_footer', value: settings.stall_footer });
         await ipcRenderer.invoke('update-setting', { key: 'currency', value: settings.currency });
+        await ipcRenderer.invoke('update-setting', { key: 'stall_logo', value: settings.stall_logo });
         
         setMessage('Settings saved successfully!');
         setTimeout(() => setMessage(''), 3000);
@@ -47,6 +48,17 @@ export default function Settings() {
       }
     }
     setIsSaving(false);
+  };
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        handleUpdate('stall_logo', reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleBackup = async () => {
@@ -158,12 +170,19 @@ export default function Settings() {
         {/* Sidebar Info */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div className="card fade-in" style={{ textAlign: 'center', padding: '32px 24px' }}>
-            <div style={{ width: '80px', height: '80px', background: '#f1f5f9', borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
-              <ImageIcon size={40} />
+            <div style={{ width: '80px', height: '80px', background: '#f1f5f9', borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', overflow: 'hidden' }}>
+              {settings.stall_logo ? (
+                <img src={settings.stall_logo} alt="Stall Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <ImageIcon size={40} />
+              )}
             </div>
             <h4 style={{ margin: '0 0 8px 0' }}>Stall Logo</h4>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>Logo will appear on the top left of your invoice.</p>
-            <button className="btn btn-ghost" style={{ fontSize: '13px', width: '100%' }}>Upload New Logo</button>
+            <input type="file" id="logoUpload" accept="image/*" style={{ display: 'none' }} onChange={handleLogoUpload} />
+            <button className="btn btn-ghost" style={{ fontSize: '13px', width: '100%' }} onClick={() => document.getElementById('logoUpload').click()}>
+              {settings.stall_logo ? 'Change Logo' : 'Upload New Logo'}
+            </button>
           </div>
 
           <div className="card fade-in" style={{ background: 'var(--primary-light)', border: '1px solid #dbeafe' }}>
